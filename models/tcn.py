@@ -118,7 +118,10 @@ class TCN(gluon.Block):
         num_predictions = 1 if not self.train_sequences else input_seq_len
         inp = inp_buffer[:, :input_seq_len, :]
         for j in range(predict_seq_len):
-            output = self.forward(inp, exog=exog_input[:, j:j + num_predictions, :])
+            if exog_input is not None:
+                output = self.forward(inp, exog=exog_input[:, j:j + num_predictions, :])
+            else:
+                output = self.forward(inp, exog=None)
             # for train_sequences, we need to grab every num_predictionth prediction
             output_idx = mx.nd.arange(0, output.shape[0], num_predictions) + num_predictions - 1
             last_outputs = output[output_idx, :]
