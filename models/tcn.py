@@ -95,10 +95,13 @@ class TCN(gluon.Block):
         tcn_out = self.tcn.forward(inputs.transpose((0, 2, 1)))
         if not self.train_sequences:
             tcn_out = tcn_out[:, :, self.input_seq_len - 1:self.input_seq_len]
-        # exog_t: (batch_size, exog_dim, seq_len)
-        exog_t = exog.transpose((0, 2, 1))
-        # combined: (batch_size, seq_len, exog_dim + out_channels)
-        combined = mx.nd.concat(tcn_out, exog_t, dim=1).transpose((0, 2, 1))
+        combined = tcn_out
+        if exog is not None:
+            # exog_t: (batch_size, exog_dim, seq_len)
+            exog_t = exog.transpose((0, 2, 1))
+            # combined: (batch_size, seq_len, exog_dim + out_channels)
+            combined = mx.nd.concat(combined, exog_t, dim=1)
+        combined = combined.transpose((0, 2, 1))
         # flatten all predictions
         # preds: (batch_size * seq_len, out_channels)
         preds = combined.reshape((-1, combined.shape[2]))

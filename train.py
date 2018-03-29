@@ -57,15 +57,20 @@ def train_epochs(model, loaders, loss, trainer, num_epochs, log_interval):
         print(model.out.weight.data()[0, 32].asscalar())
 
 
-def train_epochs_tcn(model, loaders, loss, trainer, num_epochs, log_interval):
+def train_epochs_tcn(model, loaders, loss, trainer, num_epochs, log_interval, use_exog=False):
     batch_size = loaders['train']._batch_sampler._batch_size
     for epoch in range(num_epochs):
         total_loss = 0.0
         total_samples = 0
-        for data, exog, target in loaders['train']:
+        for batch in loaders['train']:
+            if use_exog:
+                data, exog, target = batch
+            else:
+                data, target = batch
+                exog = None
             bsize, out_seq_len, out_dim = target.shape
             # assert data.shape == (batch_size, input_seq_len, feature_dim)
-            exog_dim = exog.shape[2]
+            # exog_dim = exog.shape[2]
             # assert exog.shape == (batch_size, out_seq_len, exog_dim)
             with mx.autograd.record():
                 output = model.forward(data, exog=exog)
@@ -78,9 +83,14 @@ def train_epochs_tcn(model, loaders, loss, trainer, num_epochs, log_interval):
 
         test_loss = 0.0
         test_samples = 0
-        for data, exog, target in loaders['valid']:
+        for batch in loaders['valid']:
+            if use_exog:
+                data, exog, target = batch
+            else:
+                data, target = batch
+                exog = None
             bsize, out_seq_len, out_dim = target.shape
-            exog_dim = exog.shape[2]
+            # exog_dim = exog.shape[2]
             output = model.forward(data, exog=exog)
             # output = model.forward(data, hidden)
             L = loss(output, target.reshape((batch_size * out_seq_len, -1)))
@@ -90,6 +100,7 @@ def train_epochs_tcn(model, loaders, loss, trainer, num_epochs, log_interval):
         maybe_print_summary(epoch, log_interval, test_loss, test_samples, label='valid')
         dense_data = model.dense.weight.data()
         # print(dense_data[0, dense_data.shape[1] - 1].asscalar())
+
 
 def train_batch_seq2seq(inp, target, encoder, decoder, enc_opt,
                         dec_opt, criterion, exog=None, teacher_forcing_prob=0.5):
