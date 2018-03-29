@@ -25,14 +25,15 @@ def train_epochs(model, loaders, loss, trainer, num_epochs, log_interval):
         total_samples = 0
         hidden = model.begin_state(batch_size=batch_size)
         for data, exog, target in loaders['train']:
+            bsize, out_seq_len, out_dim = target.shape
             # assert data.shape == (batch_size, input_seq_len, feature_dim)
             exog_dim = exog.shape[2]
-            assert exog.shape == (batch_size, 1, exog_dim)
-            # print(exog.shape)
-            data = data.transpose((2, 0, 1))
+            assert exog.shape == (batch_size, out_seq_len, exog_dim)
+            data = data
             hidden = detach(hidden)
             with mx.autograd.record():
-                output = model.forward(data, hidden, exog=exog.reshape((batch_size, exog_dim)))
+                # assum only one prediction step
+                output = model.forward(data, hidden, exog=exog.reshape((bsize, exog_dim)))
                 L = loss(output, target.reshape((batch_size, -1)))
                 L.backward()
             trainer.step(batch_size)
@@ -42,15 +43,90 @@ def train_epochs(model, loaders, loss, trainer, num_epochs, log_interval):
         test_loss = 0.0
         test_samples = 0
         for data, exog, target in loaders['valid']:
+            bsize, out_seq_len, out_dim = target.shape
             exog_dim = exog.shape[2]
-            data = data.transpose((2, 0, 1))
+            # data = data.transpose((2, 0, 1))
+            hidden = detach(hidden)
             output = model.forward(data, hidden, exog=exog.reshape((batch_size, exog_dim)))
+            # output = model.forward(data, hidden)
             L = loss(output, target.reshape((batch_size, -1)))
             test_loss += mx.nd.sum(L).asscalar()
             test_samples += target.shape[0]
         maybe_print_summary(epoch, log_interval, total_loss, total_samples)
         maybe_print_summary(epoch, log_interval, test_loss, test_samples, label='valid')
+        print(model.out.weight.data()[0, 32].asscalar())
 
+def train_epochs_tcn(model, loaders, loss, trainer, num_epochs, log_interval):
+    batch_size = loaders['train']._batch_sampler._batch_size
+    for epoch in range(num_epochs):
+        total_loss = 0.0
+        total_samples = 0
+        for data, exog, target in loaders['train']:
+            bsize, out_seq_len, out_dim = target.shape
+            # assert data.shape == (batch_size, input_seq_len, feature_dim)
+            exog_dim = exog.shape[2]
+            # assert exog.shape == (batch_size, out_seq_len, exog_dim)
+            with mx.autograd.record():
+                # assum only one prediction step
+                output = model.forward(data.transpose((0, 2, 1)),
+                                       exog=exog.reshape((bsize, exog_dim)))
+                L = loss(output, target.reshape((batch_size, -1)))
+                L.backward()
+            trainer.step(batch_size)
+            total_loss += mx.nd.sum(L).asscalar()
+            total_samples += target.shape[0]
+
+        test_loss = 0.0
+        test_samples = 0
+        for data, exog, target in loaders['valid']:
+            bsize, out_seq_len, out_dim = target.shape
+            exog_dim = exog.shape[2]
+            # data = data.transpose((2, 0, 1)
+            output = model.forward(data.transpose((0, 2, 1)), exog=exog.reshape((bsize, exog_dim)))
+            # output = model.forward(data, hidden)
+            L = loss(output, target.reshape((batch_size, -1)))
+            test_loss += mx.nd.sum(L).asscalar()
+            test_samples += target.shape[0]
+        maybe_print_summary(epoch, log_interval, total_loss, total_samples)
+        maybe_print_summary(epoch, log_interval, test_loss, test_samples, label='valid')
+        dense_data = model.dense.weight.data()
+        print(dense_data[0, dense_data.shape[1] - 1].asscalar())
+
+def train_epochs_tcn2(model, loaders, loss, trainer, num_epochs, log_interval):
+    batch_size = loaders['train']._batch_sampler._batch_size
+    for epoch in range(num_epochs):
+        total_loss = 0.0
+        total_samples = 0
+        for data, exog, target in loaders['train']:
+            bsize, out_seq_len, out_dim = target.shape
+            # assert data.shape == (batch_size, input_seq_len, feature_dim)
+            exog_dim = exog.shape[2]
+            # assert exog.shape == (batch_size, out_seq_len, exog_dim)
+            with mx.autograd.record():
+                output = model.forward(data.transpose((0, 2, 1)),
+                                       exog=exog)
+                # print(output.shape, target.shape)
+                L = loss(output, target.reshape((batch_size * out_seq_len, -1)))
+                L.backward()
+            trainer.step(batch_size)
+            total_loss += mx.nd.sum(L).asscalar()
+            total_samples += target.shape[0]
+
+        test_loss = 0.0
+        test_samples = 0
+        for data, exog, target in loaders['valid']:
+            bsize, out_seq_len, out_dim = target.shape
+            exog_dim = exog.shape[2]
+            # data = data.transpose((2, 0, 1)
+            output = model.forward(data.transpose((0, 2, 1)), exog=exog)
+            # output = model.forward(data, hidden)
+            L = loss(output, target.reshape((batch_size * out_seq_len, -1)))
+            test_loss += mx.nd.sum(L).asscalar()
+            test_samples += target.shape[0]
+        maybe_print_summary(epoch, log_interval, total_loss, total_samples)
+        maybe_print_summary(epoch, log_interval, test_loss, test_samples, label='valid')
+        dense_data = model.dense.weight.data()
+        print(dense_data[0, dense_data.shape[1] - 1].asscalar())
 
 def train_batch_seq2seq(inp, target, encoder, decoder, enc_opt,
                         dec_opt, criterion, exog=None, teacher_forcing_prob=0.5):

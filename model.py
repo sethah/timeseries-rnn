@@ -82,7 +82,7 @@ class Decoder(gluon.Block):
         for i in range(nsteps):
             dec_out, dec_hidden = self.forward(dec_inp, dec_hidden, exog[:, i, :])
             preds.append(dec_out)
-            dec_inp = mx.nd.expand_dims(dec_out, axis=1)#.transpose((1, 0, 2))
+            dec_inp = mx.nd.expand_dims(dec_out, axis=1)
 
         return mx.nd.concatenate(preds, axis=1)
 
@@ -99,19 +99,20 @@ class LSTMExogModel(gluon.Block):
         super(LSTMExogModel, self).__init__()
         self.hidden_size = hidden_size
         self.lstm = gluon.rnn.LSTM(hidden_size=hidden_size, num_layers=num_layers,
-                                   dropout=0.4)
+                                   dropout=0.0, layout='NTC')
         self.out = gluon.nn.Dense(output_seq_len, activation=None)
         self.bn1 = gluon.nn.BatchNorm(axis=1)
 
     def forward(self, inputs, hidden, exog=None):
         """
-        :param inputs: shape (feature_dim, batch_size, input_seq_len)
+        :param inputs: shape (batch_size, input_seq_len, feature_dim)
         :param hidden:
         :param exog: shape (batch_size, exog_dim)
         :return:
         """
         output, hidden = self.lstm.forward(inputs, hidden)
-        output = output.reshape((-1, self.hidden_size))
+        # output is (batch_size, in_seq_len, hidden_size)
+        output = output[:, inputs.shape[1] - 1, :].reshape((-1, self.hidden_size))
         if exog is not None:
             assert (exog.shape[0] == output.shape[0])
             output = mx.nd.concat(output, exog, dim=1)
@@ -132,36 +133,38 @@ class LSTMExogModel(gluon.Block):
         yn = predict([yn-3, yn-2, yn-1])
 
         :param predict_input: The input sequence to seed predictions with
-                              shape (feature_dim, pred_batch_size, input_seq_len)
+                              shape (pred_batch_size, input_seq_len, feature_dim)
         :param exog_input: The exogenous input features, we need them for every
-                           prediction step. Shape (exog_dim, pred_batch_size, predict_seq_len)
+                           prediction step. Shape (pred_batch_size, predict_seq_len, exog_dim)
         :param predict_seq_len: The number of time steps ahead to predict.
         :return: Predictions, shape (output_dim, pred_batch_size, predict_seq_len)
         """
 
-        feature_dim, pred_batch_size, input_seq_len = predict_input.shape
+        pred_batch_size, input_seq_len, feature_dim = predict_input.shape
+        out_dim = self.out.weight.shape[0]
         # will fail if weights not yet initialized
-        lstm_input_len = self.lstm.i2h_weight[0].data().shape[1]
-        assert input_seq_len == lstm_input_len, "model expects input sequence length %d, but " \
-                                                "got %d" % (lstm_input_len, input_seq_len)
+        # lstm_input_len = self.lstm.i2h_weight[0].data().shape[1]
+        # assert input_seq_len == lstm_input_len, "model expects input sequence length %d, but " \
+        #                                         "got %d" % (lstm_input_len, input_seq_len)
         if exog_input is not None:
-            exog_dim = exog_input.shape[0]
-            assert exog_input.shape == (pred_batch_size, exog_dim, predict_seq_len)
+            exog_dim = exog_input.shape[2]
+            assert exog_input.shape == (pred_batch_size, predict_seq_len, exog_dim)
 
         # this buffer holds the input and output as we fill things in
-        inp_buffer = mx.nd.zeros((feature_dim, pred_batch_size, input_seq_len + predict_seq_len))
-        inp_buffer[:, :, :input_seq_len] = predict_input[:, 0, :]
+        inp_buffer = mx.nd.zeros((pred_batch_size, input_seq_len + predict_seq_len, feature_dim))
+        inp_buffer[:, :input_seq_len, :] = predict_input
 
-        inp = inp_buffer[:, :, :input_seq_len]
+        inp = inp_buffer[:, :input_seq_len, :]
         hidden = self.begin_state(batch_size=pred_batch_size)
         for j in range(predict_seq_len):
             if exog_input is None:
                 output = self.forward(inp, hidden, exog=None)
             else:
-                output = self.forward(inp, hidden, exog_input[:, :, j].transpose((1, 0)))
-            assert output.shape == (pred_batch_size, self.out.weight.shape[0])
-            inp_buffer[0, :, input_seq_len + j:input_seq_len + j + 1] = output
-            inp = inp_buffer[:, :, j + 1:input_seq_len + j + 1]
-        outputs = inp_buffer[:, :, input_seq_len:]
-        assert outputs.shape == (self.out.weight.shape[0], pred_batch_size, predict_seq_len)
+                output = self.forward(inp, hidden, exog_input[:, j, :])
+            assert output.shape == (pred_batch_size, out_dim)
+            inp_buffer[:, input_seq_len + j:input_seq_len + j + 1, :] = \
+                output.reshape((pred_batch_size, 1, -1))
+            inp = inp_buffer[:, j + 1:input_seq_len + j + 1, :]
+        outputs = inp_buffer[:, input_seq_len:, :]
+        assert outputs.shape == (pred_batch_size, predict_seq_len, out_dim)
         return outputs
