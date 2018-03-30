@@ -92,37 +92,35 @@ def train_epochs_tcn(model, loaders, loss, trainer, num_epochs, log_interval, ct
                 total_loss += mx.nd.sum(l).asscalar()
                 total_samples += target.shape[0]
 
-        test_loss = 0.0
-        test_samples = 0
-        for batch in loaders['valid']:
-            if use_exog:
-                data, exog, target = batch
-                datas = gluon.utils.split_and_load(data, ctx)
-                targets = gluon.utils.split_and_load(target, ctx)
-                exogs = gluon.utils.split_and_load(exog, ctx)
-            else:
-                data, target = batch
-                datas = gluon.utils.split_and_load(data, ctx)
-                targets = gluon.utils.split_and_load(target, ctx)
-                exogs = [None] * len(datas)
-            bsize, out_seq_len, out_dim = target.shape
-            # exog_dim = exog.shape[2]
-            # output = model.forward(data, exog=exog)
-            # output = model.forward(data, hidden)
-            # L = loss(output, target.reshape((batch_size * out_seq_len, -1)))
-            outs = [model.forward(data, exog=exog) for data, exog in zip(datas, exogs)]
-            # print(output.shape, target.shape)
-            # L = loss(output, target.reshape((target.shape[0] * target.shape[1], -1)))
-            losses = [loss(output, target.reshape((target.shape[0] * target.shape[1], -1)))
-                      for output, target in zip(outs, targets)]
-
-            for target, l in zip(targets, losses):
-                test_loss += mx.nd.sum(l).asscalar()
-                test_samples += target.shape[0]
-            # test_loss += mx.nd.sum(L).asscalar()
-            # test_samples += target.shape[0]
+        # test_loss = 0.0
+        # test_samples = 0
+        # for batch in loaders['valid']:
+        #     if use_exog:
+        #         data, exog, target = batch
+        #         datas = gluon.utils.split_and_load(data, ctx)
+        #         targets = gluon.utils.split_and_load(target, ctx)
+        #         exogs = gluon.utils.split_and_load(exog, ctx)
+        #     else:
+        #         data, target = batch
+        #         datas = gluon.utils.split_and_load(data, ctx)
+        #         targets = gluon.utils.split_and_load(target, ctx)
+        #         exogs = [None] * len(datas)
+        #     bsize, out_seq_len, out_dim = target.shape
+        #     # exog_dim = exog.shape[2]
+        #     # output = model.forward(data, exog=exog)
+        #     # output = model.forward(data, hidden)
+        #     # L = loss(output, target.reshape((batch_size * out_seq_len, -1)))
+        #     outs = [model.forward(data, exog=exog) for data, exog in zip(datas, exogs)]
+        #     # print(output.shape, target.shape)
+        #     # L = loss(output, target.reshape((target.shape[0] * target.shape[1], -1)))
+        #     losses = [loss(output, target.reshape((target.shape[0] * target.shape[1], -1)))
+        #               for output, target in zip(outs, targets)]
+        #
+        #     for target, l in zip(targets, losses):
+        #         test_loss += mx.nd.sum(l).asscalar()
+        #         test_samples += target.shape[0]
         maybe_print_summary(epoch, log_interval, total_loss, total_samples)
-        maybe_print_summary(epoch, log_interval, test_loss, test_samples, label='valid')
+        # maybe_print_summary(epoch, log_interval, test_loss, test_samples, label='valid')
         # dense_data = model.dense.weight.data()
         # print(dense_data[0, dense_data.shape[1] - 1].asscalar())
 
