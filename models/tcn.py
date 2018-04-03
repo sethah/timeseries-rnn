@@ -71,8 +71,8 @@ class TemporalConvNet(gluon.Block):
 
 
 class TCN(gluon.Block):
-    def __init__(self, channel_list, in_channels, input_seq_len, output_dim, train_sequences=False,
-                 prefix=None):
+    def __init__(self, channel_list, in_channels, input_seq_len, output_dim, dropout=0.0,
+                 train_sequences=False, prefix=None):
         """
         :param channel_list: A list of output channels for each TemporalBlock layer.
         :param in_channels: The number of input sequences.
