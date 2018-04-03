@@ -92,7 +92,7 @@ def train_epochs_tcn(model, loaders, loss, trainer, num_epochs, log_interval, ct
                 total_loss += mx.nd.sum(l).asscalar()
                 total_samples += target.shape[0]
 
-        if (epoch + 1) % valid_interval and valid_func:
+        if (epoch + 1) % valid_interval == 0 and valid_func:
             val_loss = valid_func(model)
             print("Valid loss: %0.3f" % val_loss)
 
