@@ -113,12 +113,12 @@ class TCN(gluon.Block):
         out = self.dense(preds)
         return out
 
-    def predict_dynamic(self, predict_input, predict_seq_len, exog_input=None, ctx=mx.cpu()):
+    def predict_dynamic(self, predict_input, predict_seq_len, exog_input=None):
         pred_batch_size, input_seq_len, feature_dim = predict_input.shape
 
         # this buffer holds the input and output as we fill things in
         inp_buffer = mx.nd.zeros((pred_batch_size, input_seq_len + predict_seq_len, feature_dim),
-                                 ctx=ctx)
+                                 ctx=predict_input.context)
         inp_buffer[:, :input_seq_len, :] = predict_input
 
         num_predictions = 1 if not self.train_sequences else input_seq_len
@@ -129,8 +129,8 @@ class TCN(gluon.Block):
             else:
                 output = self.forward(inp, exog=None)
             # for train_sequences, we need to grab every num_predictionth prediction
-            output_idx = mx.nd.arange(0, output.shape[0], num_predictions, ctx=ctx)\
-                         + num_predictions - 1
+            output_idx = mx.nd.arange(0, output.shape[0], num_predictions,
+                                      ctx=predict_input.context) + num_predictions - 1
             last_outputs = output[output_idx, :]
             inp_buffer[:, input_seq_len + j:input_seq_len + j + 1, :] = \
                 last_outputs.reshape((pred_batch_size, 1, -1))
@@ -145,8 +145,7 @@ class TCN(gluon.Block):
             end = min([i + pred_batch_size, predict_input.shape[0]])
             predict_input_batch = predict_input[i:end, :]
             predict_input_batch = mx.nd.expand_dims(predict_input_batch, 2)
-            pred_outputs = self.predict_dynamic(predict_input_batch, predict_steps, exog_input=None,
-                                                ctx=ctx)
+            pred_outputs = self.predict_dynamic(predict_input_batch, predict_steps, exog_input=None)
             pred_outs.append(pred_outputs)
 
         out_rows = sum([x.shape[0] for x in pred_outs])

@@ -58,7 +58,7 @@ def train_epochs(model, loaders, loss, trainer, num_epochs, log_interval):
 
 
 def train_epochs_tcn(model, loaders, loss, trainer, num_epochs, log_interval, ctx,
-                     use_exog=False):
+                     use_exog=False, valid_func=None, valid_interval=1):
     batch_size = loaders['train']._batch_sampler._batch_size
     for epoch in range(num_epochs):
         total_loss = 0.0
@@ -91,6 +91,10 @@ def train_epochs_tcn(model, loaders, loss, trainer, num_epochs, log_interval, ct
             for target, l in zip(targets, losses):
                 total_loss += mx.nd.sum(l).asscalar()
                 total_samples += target.shape[0]
+
+        if (epoch + 1) % valid_interval and valid_func:
+            val_loss = valid_func(model)
+            print("Valid loss: %0.3f" % val_loss)
 
         # test_loss = 0.0
         # test_samples = 0
