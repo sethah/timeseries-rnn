@@ -139,3 +139,21 @@ class TCN(gluon.Block):
         assert outputs.shape == (pred_batch_size, predict_seq_len, self.output_dim)
         return outputs
 
+    def predict_batch(self, predict_input, predict_steps, ctx, pred_batch_size=5000):
+        pred_outs = []
+        for i in range(0, predict_input.shape[0], pred_batch_size):
+            end = min([i + pred_batch_size, predict_input.shape[0]])
+            predict_input_batch = predict_input[i:end, :]
+            predict_input_batch = mx.nd.expand_dims(predict_input_batch, 2)
+            pred_outputs = self.predict_dynamic(predict_input_batch, predict_steps, exog_input=None,
+                                                ctx=ctx)
+            pred_outs.append(pred_outputs)
+
+        out_rows = sum([x.shape[0] for x in pred_outs])
+        final_preds = mx.nd.zeros((out_rows, predict_steps), ctx=ctx)
+        i = 0
+        for arr in pred_outs:
+            final_preds[i:i + arr.shape[0], :] = arr[:, :, 0]
+            i += arr.shape[0]
+        return final_preds
+
