@@ -96,8 +96,17 @@ class TCN(gluon.Block):
         :param exog: shape (batch_size, seq_len, exog_dim)
         :return: NDArray, shape (batch_size * num_predictions, output_dim)
         """
+        if isinstance(inputs, mx.nd.NDArray):
+            data = inputs
+            exog = None
+        elif isinstance(inputs, tuple):
+            assert len(inputs) == 2, \
+                "Model only supports input tuples of length 2, got %d" % len(inputs)
+            data, exog = inputs
+        else:
+            raise Exception("Unsupported input type %s" % type(inputs))
         # tcn_out: (batch_size, out_channels, seq_len)
-        tcn_out = self.tcn.forward(inputs.transpose((0, 2, 1)))
+        tcn_out = self.tcn.forward(data.transpose((0, 2, 1)))
         if not self.train_sequences:
             tcn_out = tcn_out[:, :, self.input_seq_len - 1:self.input_seq_len]
         combined = tcn_out

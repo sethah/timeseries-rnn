@@ -72,7 +72,7 @@ class GenSequenceFullDataset(gluon.data.Dataset):
             y += bin_exog * 1
             exog = mx.nd.array(bin_exog[out_start:].reshape((-1, 1)))
         y = y.reshape((-1, 1))
-        return mx.nd.array(y[:self.in_seq_len]), exog, mx.nd.array(y[out_start:])
+        return (mx.nd.array(y[:self.in_seq_len]), exog), mx.nd.array(y[out_start:])
 
     def __len__(self):
         return self.length

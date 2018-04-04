@@ -58,31 +58,20 @@ def train_epochs(model, loaders, loss, trainer, num_epochs, log_interval):
 
 
 def train_epochs_tcn(model, loaders, loss, trainer, num_epochs, log_interval, ctx,
-                     use_exog=False, valid_func=None, valid_interval=1):
+                     valid_func=None, valid_interval=1):
     batch_size = loaders['train']._batch_sampler._batch_size
     for epoch in range(num_epochs):
         total_loss = 0.0
         total_samples = 0
         for batch in loaders['train']:
-            if use_exog:
-                data, exog, target = batch
-                datas = gluon.utils.split_and_load(data, ctx)
-                targets = gluon.utils.split_and_load(target, ctx)
-                exogs = gluon.utils.split_and_load(exog, ctx)
+            data, target = batch
+            if isinstance(data, tuple) or isinstance(data, list):
+                datas = zip(*[gluon.utils.split_and_load(d, ctx) for d in data])
             else:
-                data, target = batch
                 datas = gluon.utils.split_and_load(data, ctx)
-                targets = gluon.utils.split_and_load(target, ctx)
-                exogs = [None] * len(datas)
-            # bsize, out_seq_len, out_dim = target.shape
-            # assert data.shape == (batch_size, input_seq_len, feature_dim)
-            # exog_dim = exog.shape[2]
-            # assert exog.shape == (batch_size, out_seq_len, exog_dim)
+            targets = gluon.utils.split_and_load(target, ctx)
             with mx.autograd.record():
-                # output = model.forward(data, exog=exog)
-                outs = [model.forward(data, exog=exog) for data, exog in zip(datas, exogs)]
-                # print(output.shape, target.shape)
-                # L = loss(output, target.reshape((target.shape[0] * target.shape[1], -1)))
+                outs = [model.forward(data) for data, exog in datas]
                 losses = [loss(output, target.reshape((target.shape[0] * target.shape[1], -1)))
                           for output, target in zip(outs, targets)]
                 for l in losses:
@@ -92,41 +81,10 @@ def train_epochs_tcn(model, loaders, loss, trainer, num_epochs, log_interval, ct
                 total_loss += mx.nd.sum(l).asscalar()
                 total_samples += target.shape[0]
 
+        maybe_print_summary(epoch, log_interval, total_loss, total_samples)
         if (epoch + 1) % valid_interval == 0 and valid_func:
             val_loss = valid_func(model)
-            print("Valid loss: %0.3f" % val_loss)
-
-        # test_loss = 0.0
-        # test_samples = 0
-        # for batch in loaders['valid']:
-        #     if use_exog:
-        #         data, exog, target = batch
-        #         datas = gluon.utils.split_and_load(data, ctx)
-        #         targets = gluon.utils.split_and_load(target, ctx)
-        #         exogs = gluon.utils.split_and_load(exog, ctx)
-        #     else:
-        #         data, target = batch
-        #         datas = gluon.utils.split_and_load(data, ctx)
-        #         targets = gluon.utils.split_and_load(target, ctx)
-        #         exogs = [None] * len(datas)
-        #     bsize, out_seq_len, out_dim = target.shape
-        #     # exog_dim = exog.shape[2]
-        #     # output = model.forward(data, exog=exog)
-        #     # output = model.forward(data, hidden)
-        #     # L = loss(output, target.reshape((batch_size * out_seq_len, -1)))
-        #     outs = [model.forward(data, exog=exog) for data, exog in zip(datas, exogs)]
-        #     # print(output.shape, target.shape)
-        #     # L = loss(output, target.reshape((target.shape[0] * target.shape[1], -1)))
-        #     losses = [loss(output, target.reshape((target.shape[0] * target.shape[1], -1)))
-        #               for output, target in zip(outs, targets)]
-        #
-        #     for target, l in zip(targets, losses):
-        #         test_loss += mx.nd.sum(l).asscalar()
-        #         test_samples += target.shape[0]
-        maybe_print_summary(epoch, log_interval, total_loss, total_samples)
-        # maybe_print_summary(epoch, log_interval, test_loss, test_samples, label='valid')
-        # dense_data = model.dense.weight.data()
-        # print(dense_data[0, dense_data.shape[1] - 1].asscalar())
+            print("[Epoch %d] valid loss: %0.3f" % (epoch + 1, val_loss))
 
 
 def train_batch_seq2seq(inp, target, encoder, decoder, enc_opt,
