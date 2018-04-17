@@ -55,6 +55,7 @@ class TemporalBlock(gluon.Block):
 class TemporalConvNet(gluon.Block):
     def __init__(self, channel_list, in_channels, dropout=0.0, kernel_size=2, prefix=None):
         super(TemporalConvNet, self).__init__(prefix=prefix)
+        self.aperture = 0
         with self.name_scope():
             self.net = nn.Sequential()
             num_levels = len(channel_list)
@@ -65,6 +66,7 @@ class TemporalConvNet(gluon.Block):
                 self.net.add(
                     TemporalBlock(kernel_size, dilation, out_channels, in_channels=in_channels,
                                   dropout=dropout))
+                self.aperture += 2**i * (kernel_size - 1)
 
     def forward(self, inputs):
         return self.net(inputs)
@@ -72,7 +74,7 @@ class TemporalConvNet(gluon.Block):
 
 class TCN(gluon.Block):
     def __init__(self, channel_list, in_channels, input_seq_len, output_dim, dropout=0.0,
-                 train_sequences=False, prefix=None):
+                 train_sequences=False, kernel_size=2, prefix=None):
         """
         :param channel_list: A list of output channels for each TemporalBlock layer.
         :param in_channels: The number of input sequences.
@@ -87,10 +89,11 @@ class TCN(gluon.Block):
         self.train_sequences = train_sequences
         self.channel_list = channel_list
         with self.name_scope():
-            self.tcn = TemporalConvNet(channel_list, in_channels=in_channels)
+            self.tcn = TemporalConvNet(channel_list, in_channels=in_channels, dropout=dropout,
+                                       kernel_size=kernel_size)
             self.dense = gluon.nn.Dense(output_dim)
 
-    def forward(self, inputs, exog=None):
+    def forward(self, inputs):
         """
         :param inputs: shape (batch_size, seq_len, in_channels)
         :param exog: shape (batch_size, seq_len, exog_dim)
@@ -122,7 +125,11 @@ class TCN(gluon.Block):
         out = self.dense(preds)
         return out
 
-    def predict_dynamic(self, predict_input, predict_seq_len, exog_input=None):
+    def predict_dynamic(self, predict_input, predict_seq_len):
+        if isinstance(predict_input, list) or isinstance(predict_input, tuple):
+            predict_input, exog = predict_input
+        else:
+            exog = None
         pred_batch_size, input_seq_len, feature_dim = predict_input.shape
 
         # this buffer holds the input and output as we fill things in
@@ -133,10 +140,10 @@ class TCN(gluon.Block):
         num_predictions = 1 if not self.train_sequences else input_seq_len
         inp = inp_buffer[:, :input_seq_len, :]
         for j in range(predict_seq_len):
-            if exog_input is not None:
-                output = self.forward(inp, exog=exog_input[:, j:j + num_predictions, :])
+            if exog is None:
+                output = self.forward(inp)
             else:
-                output = self.forward(inp, exog=None)
+                output = self.forward((inp, exog[:, j:j + num_predictions, :]))
             # for train_sequences, we need to grab every num_predictionth prediction
             output_idx = mx.nd.arange(0, output.shape[0], num_predictions,
                                       ctx=predict_input.context) + num_predictions - 1
@@ -148,20 +155,36 @@ class TCN(gluon.Block):
         assert outputs.shape == (pred_batch_size, predict_seq_len, self.output_dim)
         return outputs
 
-    def predict_batch(self, predict_input, predict_steps, ctx, pred_batch_size=5000):
-        pred_outs = []
-        for i in range(0, predict_input.shape[0], pred_batch_size):
-            end = min([i + pred_batch_size, predict_input.shape[0]])
-            predict_input_batch = predict_input[i:end, :]
-            predict_input_batch = mx.nd.expand_dims(predict_input_batch, 2)
-            pred_outputs = self.predict_dynamic(predict_input_batch, predict_steps, exog_input=None)
-            pred_outs.append(pred_outputs)
 
-        out_rows = sum([x.shape[0] for x in pred_outs])
-        final_preds = mx.nd.zeros((out_rows, predict_steps), ctx=ctx)
-        i = 0
-        for arr in pred_outs:
-            final_preds[i:i + arr.shape[0], :] = arr[:, :, 0]
-            i += arr.shape[0]
-        return final_preds
+class TCN2(gluon.Block):
+    def __init__(self, channel_list, in_channels, input_seq_len, output_seq_len, dropout=0.0,
+                 train_sequences=False, prefix=None):
+        """
+        :param channel_list: A list of output channels for each TemporalBlock layer.
+        :param in_channels: The number of input sequences.
+        :param input_seq_len: Length of the input sequence.
+        :param output_dim: The number of output sequences to predict.
+        :param train_sequences: Whether to backprop the predictions for the entire sequence
+                                or just the last prediction.
+        """
+        super(TCN2, self).__init__(prefix=prefix)
+        self.input_seq_len = input_seq_len
+        self.output_seq_len = output_seq_len
+        self.train_sequences = train_sequences
+        self.channel_list = channel_list
+        with self.name_scope():
+            self.tcn = TemporalConvNet(channel_list, in_channels=in_channels, dropout=dropout)
+            self.dense = gluon.nn.Dense(output_seq_len)
 
+    def forward(self, inputs):
+        """
+        :param inputs: shape (batch_size, seq_len, in_channels)
+        :param exog: shape (batch_size, seq_len, exog_dim)
+        :return: NDArray, shape (batch_size * num_predictions, output_dim)
+        """
+        # tcn_out: (batch_size, out_channels, seq_len)
+        tcn_out = self.tcn.forward(inputs.transpose((0, 2, 1)))
+        if not self.train_sequences:
+            tcn_out = tcn_out[:, :, self.input_seq_len - 1:self.input_seq_len]
+        tcn_out = self.dense.forward(tcn_out)
+        return mx.nd.expand_dims(tcn_out, 2)

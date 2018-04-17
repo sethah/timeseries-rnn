@@ -60,9 +60,9 @@ def train_epochs(model, loaders, loss, trainer, num_epochs, log_interval):
 def train_epochs_tcn(model, loaders, loss, trainer, num_epochs, log_interval, ctx,
                      valid_func=None, valid_interval=1):
     batch_size = loaders['train']._batch_sampler._batch_size
+    total_loss = 0.0
+    total_samples = 0
     for epoch in range(num_epochs):
-        total_loss = 0.0
-        total_samples = 0
         for batch in loaders['train']:
             data, target = batch
             if isinstance(data, tuple) or isinstance(data, list):
@@ -71,7 +71,7 @@ def train_epochs_tcn(model, loaders, loss, trainer, num_epochs, log_interval, ct
                 datas = gluon.utils.split_and_load(data, ctx)
             targets = gluon.utils.split_and_load(target, ctx)
             with mx.autograd.record():
-                outs = [model.forward(data) for data, exog in datas]
+                outs = [model.forward(data) for data in datas]
                 losses = [loss(output, target.reshape((target.shape[0] * target.shape[1], -1)))
                           for output, target in zip(outs, targets)]
                 for l in losses:
@@ -81,7 +81,12 @@ def train_epochs_tcn(model, loaders, loss, trainer, num_epochs, log_interval, ct
                 total_loss += mx.nd.sum(l).asscalar()
                 total_samples += target.shape[0]
 
-        maybe_print_summary(epoch, log_interval, total_loss, total_samples)
+        # maybe_print_summary(epoch, log_interval, total_loss, total_samples)
+        if (epoch + 1) % log_interval == 0:
+            cur_loss = total_loss / total_samples
+            print("[Epoch %d] %s loss = %0.3f" % (epoch + 1, 'train', cur_loss))
+            total_loss = 0.0
+            total_samples = 0
         if (epoch + 1) % valid_interval == 0 and valid_func:
             val_loss = valid_func(model)
             print("[Epoch %d] valid loss: %0.3f" % (epoch + 1, val_loss))
