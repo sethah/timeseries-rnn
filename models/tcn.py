@@ -2,6 +2,8 @@ import mxnet as mx
 import mxnet.gluon as gluon
 import mxnet.gluon.nn as nn
 
+import json
+
 
 class CutRight(gluon.Block):
     def __init__(self, cut_size):
@@ -157,15 +159,23 @@ class TCN(gluon.Block):
         assert outputs.shape == (pred_batch_size, predict_seq_len, self.output_dim)
         return outputs
 
-    def save(self, path, name):
+    def save(self, path):
         metadata = {'channel_list': self.channel_list, 'feature_dim': self.in_channels,
                     'output_dim': self.output_dim, 'input_seq_len': self.input_seq_len,
                     'train_sequences': self.train_sequences, 'kernel_size': self.kernel_size,
                     'prefix': self.prefix}
-        import json
-        with open(path + name + ".json") as f:
+        with open(path + "meta.json", "w") as f:
             f.write(json.dumps(metadata))
-        self.collect_params().save(path + name + ".dat")
+        self.collect_params().save(path + "params.dat")
+
+    @staticmethod
+    def load(path):
+        with open(path + "meta.json", 'r') as f:
+            meta = json.load(f)
+        model = TCN(**meta)
+        model.collect_params().load(path + "params.dat")
+        return model
+
 
 
 class TCN2(gluon.Block):
