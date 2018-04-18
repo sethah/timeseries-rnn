@@ -88,6 +88,8 @@ class TCN(gluon.Block):
         self.output_dim = output_dim
         self.train_sequences = train_sequences
         self.channel_list = channel_list
+        self.kernel_size = kernel_size
+        self.in_channels = in_channels
         with self.name_scope():
             self.tcn = TemporalConvNet(channel_list, in_channels=in_channels, dropout=dropout,
                                        kernel_size=kernel_size)
@@ -154,6 +156,16 @@ class TCN(gluon.Block):
         outputs = inp_buffer[:, input_seq_len:, :]
         assert outputs.shape == (pred_batch_size, predict_seq_len, self.output_dim)
         return outputs
+
+    def save(self, path, name):
+        metadata = {'channel_list': self.channel_list, 'feature_dim': self.in_channels,
+                    'output_dim': self.output_dim, 'input_seq_len': self.input_seq_len,
+                    'train_sequences': self.train_sequences, 'kernel_size': self.kernel_size,
+                    'prefix': self.prefix}
+        import json
+        with open(path + name + ".json") as f:
+            f.write(json.dumps(metadata))
+        self.collect_params().save(path + name + ".dat")
 
 
 class TCN2(gluon.Block):
