@@ -3,6 +3,7 @@ import mxnet.gluon as gluon
 import mxnet.gluon.nn as nn
 
 import json
+import os
 
 
 class CutRight(gluon.Block):
@@ -92,6 +93,7 @@ class TCN(gluon.Block):
         self.channel_list = channel_list
         self.kernel_size = kernel_size
         self.in_channels = in_channels
+        self.dropout = dropout
         with self.name_scope():
             self.tcn = TemporalConvNet(channel_list, in_channels=in_channels, dropout=dropout,
                                        kernel_size=kernel_size)
@@ -160,20 +162,22 @@ class TCN(gluon.Block):
         return outputs
 
     def save(self, path):
-        metadata = {'channel_list': self.channel_list, 'feature_dim': self.in_channels,
+        metadata = {'channel_list': self.channel_list, 'in_channels': self.in_channels,
                     'output_dim': self.output_dim, 'input_seq_len': self.input_seq_len,
                     'train_sequences': self.train_sequences, 'kernel_size': self.kernel_size,
-                    'prefix': self.prefix}
-        with open(path + "meta.json", "w") as f:
+                    'prefix': self.prefix, 'dropout': self.dropout}
+        if not os.path.exists(path):
+            os.makedirs(os.path.dirname(path))
+        with open(os.path.join(path, "meta.json"), "w") as f:
             f.write(json.dumps(metadata))
-        self.collect_params().save(path + "params.dat")
+        self.collect_params().save(os.path.join(path, "params.dat"))
 
     @staticmethod
-    def load(path):
-        with open(path + "meta.json", 'r') as f:
+    def load(path, ctx):
+        with open(os.path.join(path, "meta.json"), 'r') as f:
             meta = json.load(f)
         model = TCN(**meta)
-        model.collect_params().load(path + "params.dat")
+        model.collect_params().load(os.path.join(path, "params.dat"), ctx=ctx)
         return model
 
 
