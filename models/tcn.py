@@ -157,10 +157,10 @@ class TCN(gluon.Block):
             output_idx = mx.nd.arange(0, output.shape[0], num_predictions,
                                       ctx=predict_input.context) + num_predictions - 1
             last_outputs = output[output_idx, :]
-            inp_buffer[:, input_seq_len + j:input_seq_len + j + 1, :1] = \
+            inp_buffer[:, input_seq_len + j:input_seq_len + j + 1, :self.output_dim] = \
                 last_outputs.reshape((pred_batch_size, 1, -1))
             inp = inp_buffer[:, j + 1:input_seq_len + j + 1, :]
-        outputs = inp_buffer[:, input_seq_len:, :]
+        outputs = inp_buffer[:, input_seq_len:, :self.output_dim]
         assert outputs.shape == (pred_batch_size, predict_seq_len, self.output_dim)
         return outputs
 
